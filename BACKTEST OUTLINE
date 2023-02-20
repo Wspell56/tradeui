@@ -1,0 +1,76 @@
+##This Python code is designed to backtest a bullish put spread strategy for a given stock. 
+The strategy involves selling a put option with a strike price one strike below the premarket opening price at 9:30 am, 
+and buying a put option with a strike price one strike below the sell leg. The code first filters out days where the 
+stock did not have a gap up and ended higher than the premarket opening price, and calculates the RVOL to only include stocks 
+that have RVOL greater than 1. It then calculates the premium for selling and buying the put options, and determines the profit or 
+loss from the put spread based on the closing price of the stock at the end of the trading day.
+
+
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+
+# Load historical data for the stock you want to analyze
+data = pd.read_csv('stock_data.csv')
+
+# Calculate the premarket gap up for each day
+data['gap_up'] = data['open'] - data['prev_close']
+
+# Filter the data to only include days where there was a gap up
+data = data[data['gap_up'] > 0]
+
+# Calculate the RVOL for each day
+data['rvol'] = data['volume'] / data['volume'].rolling(10).mean()
+
+# Filter the data to only include days where RVOL is greater than 1
+data = data[data['rvol'] > 1]
+
+# Calculate the percentage change from the premarket opening price to the closing price
+data['pct_change'] = (data['close'] - data['open']) / data['open']
+
+# Filter the data to only include days where the stock ended higher than the premarket opening price
+data = data[data['pct_change'] > 0]
+
+# Get the price of the stock at 9:30 am
+start_price = data.iloc[0]['open']
+
+# Calculate the strike prices for the put options (assuming one strike in the money for the sell leg)
+sell_strike = start_price - (start_price * 0.01)
+buy_strike = sell_strike - (sell_strike * 0.01)
+
+# Set the expiration date to be the closest expiration date
+now = datetime.now()
+expiration_dates = yf.Ticker('AAPL').options
+expiration_dates = [datetime.strptime(exp_date, '%Y-%m-%d') for exp_date in expiration_dates]
+expiration_dates = [exp_date for exp_date in expiration_dates if exp_date > now]
+expiration_date = min(expiration_dates)
+expiration_date_str = expiration_date.strftime('%Y-%m-%d')
+
+# Get the option chain for the closest expiration date for the sell leg
+sell_option_chain = yf.Ticker('AAPL').option_chain(expiration_date_str)
+
+# Filter the sell options to only include put options with the sell strike price
+sell_puts = sell_option_chain.puts[sell_option_chain.puts['strike'] == sell_strike]
+
+# Get the premium for selling the put option with the sell strike price
+sell_premium = sell_puts.iloc[0]['lastPrice']
+
+# Get the option chain for the closest expiration date for the buy leg
+buy_option_chain = yf.Ticker('AAPL').option_chain(expiration_date_str)
+
+# Filter the buy options to only include put options with the buy strike price
+buy_puts = buy_option_chain.puts[buy_option_chain.puts['strike'] == buy_strike]
+
+# Get the premium for buying the put option with the buy strike price
+buy_premium = buy_puts.iloc[0]['lastPrice']
+
+# Calculate the profit from the put spread
+if data.iloc[-1]['close'] >= sell_strike:
+    profit = sell_premium - buy_premium
+else:
+    profit = -(sell_strike - data.iloc[-1]['close']) + sell_premium - buy_premium
+
+# Print the results
+print('Premium for selling put option with strike', sell_strike, ':', sell_premium)
+print('Premium for buying put option with strike', buy_strike, ':', buy_premium)
+print('Profit from bullish put spread (sell', sell_strike, 'put, buy', buy_strike, 'put
